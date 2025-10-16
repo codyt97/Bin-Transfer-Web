@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>IMEI Bin Move Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg:#ffffff; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+      --accent:#16a34a; --accent-weak:#dcfce7; --accent-ring:#86efac;
+      --bad:#ef4444; --ok:#16a34a; --line:#e2e8f0; --chip:#f8fafc;
+    }
+    * { box-sizing: border-box; }
+    html,body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--ink); }
+    .wrap { max-width: 1040px; margin: 32px auto; padding: 0 16px; }
+    .card { background: var(--card); border:1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px rgba(15, 23, 42, .04); padding: 20px; }
+    h1 { font-size: 22px; margin: 0 0 6px; display:flex; gap:10px; align-items:center; }
+    .pill { display:inline-flex; gap:6px; align-items:center; padding:4px 10px; border-radius:999px; font-size:12px; background:var(--accent-weak); color:#065f46; border:1px solid var(--accent-ring); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; margin: 14px 0; }
+    .input { flex:1 1 240px; display:flex; flex-direction:column; gap:6px; }
+    .input input {
+      background:#ffffff; color:var(--ink); border:1px solid var(--line);
+      border-radius:10px; padding:12px; font-size:14px; outline:none;
+    }
+    .input input:focus { border-color: var(--accent-ring); box-shadow: 0 0 0 4px rgba(22,163,74,.12); }
+    .buttons { display:flex; gap:8px; align-items:end; }
+    button {
+      background: var(--accent); color:#ffffff; border:0; padding:12px 14px;
+      border-radius:12px; font-weight:600; cursor:pointer; transition: transform .02s ease;
+    }
+    button:hover { filter: brightness(0.98); }
+    button:active { transform: translateY(1px); }
+    button.secondary { background: #ffffff; color: var(--ink); border:1px solid var(--line); }
+    button.ghost { background: #f0fdf4; color:#065f46; border:1px solid var(--accent-ring); }
+    button.danger { background: var(--bad); color: #fff; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns: 1fr auto; align-items: center; gap:10px; }
+    table { width:100%; border-collapse: collapse; margin-top: 12px; }
+    thead th {
+      text-align:left; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); padding:10px 8px;
+      background: #f8fafc;
+    }
+    tbody td { border-bottom:1px dashed var(--line); padding:12px 8px; font-size:14px; }
+    .right { text-align:right; }
+    .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:var(--chip); border:1px solid var(--line); }
+    .toast { margin-top:10px; font-size:13px; }
+    .ok { color: var(--ok); }
+    .err { color: var(--bad); }
+    .hint { font-size:12px; color: var(--muted); margin-top:6px; }
+    code.small { font-size: 12px; background:#f8fafc; padding:2px 6px; border-radius:6px; border:1px solid var(--line); }
+    .bar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:10px 12px; background:#f8fafc; border:1px solid var(--line); border-radius:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>IMEI Bin Move Builder <span class="pill">-1 from origin • +1 to target bin</span></h1>
+      <div class="muted">Point to your Google Sheet CSV <em>or</em> click <b>Load Demo Data</b> to show how it works.</div>
+
+      <div class="row" style="margin-top:14px">
+        <div class="input">
+          <label>Google Sheet CSV URL</label>
+          <input id="csvUrl" placeholder="https://docs.google.com/spreadsheets/d/e/.../pub?output=csv" />
+          <div class="hint">File → Share → <b>Publish to web</b> → CSV. Paste the link here.</div>
+        </div>
+        <div class="buttons">
+          <button id="btnLoad">Load Inventory</button>
+          <button id="btnDemo" class="ghost" title="Loads in-memory demo inventory and two example moves">Load Demo Data</button>
+        </div>
+      </div>
+
+      <div class="bar" style="margin:10px 0 6px;">
+        <div class="input" style="flex:1 1 220px; min-width:220px;">
+          <label>Destination Bin</label>
+          <input id="destBin" placeholder="e.g., C-05-03" />
+        </div>
+        <div class="input" style="flex:1 1 220px; min-width:260px;">
+          <label>IMEI (Lot/Serial)</label>
+          <input id="imei" placeholder="Scan or type IMEI" />
+        </div>
+        <div class="buttons">
+          <button id="btnAdd" disabled>Add Move</button>
+          <button id="btnClear" class="secondary">Clear</button>
+          <button id="btnDownload" class="secondary" disabled>Download CSV</button>
+        </div>
+      </div>
+
+      <table id="tbl">
+        <thead>
+          <tr>
+            <th>Item</th>
+            <th>Lot/Serial</th>
+            <th>Expiration Date</th>
+            <th class="right">Qty</th>
+            <th class="right">Cost</th>
+            <th>Bin</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="toast" class="toast"></div>
+    </div>
+
+    <div class="hint" style="margin-top:12px;">
+      Expected columns in your inventory CSV (case-insensitive): 
+      <code class="small">Item</code>, <code class="small">Lot/Serial</code>, <code class="small">Expiration Date</code>, <code class="small">Cost</code>, <code class="small">Bin</code>.
+    </div>
+  </div>
+
+  <script>
+    // ====== STATE ======
+    let inventory = new Map();   // key: normalized lot/serial, value: item record
+    let moves = [];              // [{pairId, rows:[fromRow, toRow]}]
+    const toast = (msg, type="") => {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = `toast ${type}`;
+    };
+
+    // ====== UTIL ======
+    const clean = v => String(v ?? "").trim();
+    const normKey = v => clean(v).replace(/\s+/g,'').toUpperCase();
+    const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    const numOrBlank = (v) => {
+      const n = Number(String(v).replace(/[^0-9.\-]/g,""));
+      return Number.isFinite(n) ? n : "";
+    };
+    const csvSafe = (v) => {
+      const s = String(v ?? "");
+      if (/[",\n]/.test(s)) return `"${s.replace(/"/g,'""')}"`;
+      return s;
+    };
+
+    // Robust CSV parsing (quoted values, commas inside quotes)
+    const parseCSV = (text) => {
+      const lines = text.split(/\r?\n/);
+      // trim trailing empties
+      while (lines.length && !lines[lines.length-1].trim()) lines.pop();
+      if (!lines.length) return { headers:[], rows:[] };
+      const headers = splitCsvLine(lines[0]);
+      const rows = [];
+      for (let i=1; i<lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        const cols = splitCsvLine(lines[i]);
+        const obj = {};
+        for (let j=0;j<headers.length;j++) obj[headers[j]] = cols[j] ?? "";
+        rows.push(obj);
+      }
+      return { headers, rows };
+    };
+
+    function splitCsvLine(line) {
+      const out = [];
+      let cur = "";
+      let inQ = false;
+      for (let i=0; i<line.length; i++) {
+        const ch = line[i];
+        if (ch === '"') {
+          if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+          else inQ = !inQ;
+        } else if (ch === ',' && !inQ) {
+          out.push(cur); cur = "";
+        } else {
+          cur += ch;
+        }
+      }
+      out.push(cur);
+      return out.map(s => s.trim());
+    }
+
+    // Flexible header aliasing
+    const alias = (obj, want) => {
+      const target = want.toLowerCase();
+      for (const k of Object.keys(obj)) {
+        if (k.toLowerCase() === target) return obj[k];
+      }
+      const map = {
+        "lot/serial": ["lotserial","lot / serial","serial","imei","lot","lot number","sn","lot_serial"],
+        "expiration date": ["expiration","exp","expiry","expire date","exp date","expiration_date"],
+        "item": ["sku","item code","product","part"],
+        "cost": ["unit cost","price","unit_price"],
+        "bin": ["location","bin location","bin code"],
+      };
+      if (map[target]) {
+        for (const alt of map[target]) {
+          for (const k of Object.keys(obj)) {
+            if (k.toLowerCase() === alt) return obj[k];
+          }
+        }
+      }
+      return "";
+    };
+
+    // ====== INVENTORY LOADERS ======
+    async function loadInventoryFromUrl() {
+      const urlInput = document.getElementById("csvUrl");
+      const url = clean(urlInput.value);
+      if (!url) { toast("Paste your published CSV URL first.", "err"); return; }
+      toast("Loading inventory…");
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        adoptInventory(parseCSV(text).rows);
+        document.getElementById("btnAdd").disabled = false;
+        document.getElementById("btnDownload").disabled = moves.length === 0;
+        toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
+      } catch (e) {
+        toast(`Failed to load CSV: ${e.message}`, "err");
+      }
+    }
+
+    function loadDemo() {
+      // Demo rows (feel free to edit/expand)
+      const demo = [
+        { "Item":"SEL-MAT-01", "Lot/Serial":"1234", "Expiration Date":"1/31/2025", "Cost":"12.12", "Bin":"C-04-03" },
+        { "Item":"SEL-MAT-01", "Lot/Serial":"2234", "Expiration Date":"1/31/2025", "Cost":"12.12", "Bin":"C-04-03" },
+        { "Item":"CR-0001",    "Lot/Serial":"ABC999", "Expiration Date":"6/1/2026", "Cost":"8.50",  "Bin":"C-05-01" },
+        { "Item":"CR-0002",    "Lot/Serial":"ZX-777",  "Expiration Date":"12/31/2025", "Cost":"15.00", "Bin":"A-01-02" },
+      ];
+      adoptInventory(demo);
+      // pre-fill UI
+      document.getElementById("destBin").value = "C-05-03";
+      // seed two example moves
+      addMoveFor("1234");   // from C-04-03 -> C-05-03
+      addMoveFor("ABC999"); // from C-05-01 -> C-05-03
+      document.getElementById("btnAdd").disabled = false;
+      document.getElementById("btnDownload").disabled = false;
+      toast(`Demo loaded: ${inventory.size} serials. Two example moves added.`, "ok");
+    }
+
+    function adoptInventory(rows) {
+      inventory.clear();
+      rows.forEach(row => {
+        const rec = {
+          item: clean(alias(row, "Item")),
+          lotSerial: clean(alias(row, "Lot/Serial")),
+          exp: clean(alias(row, "Expiration Date")),
+          cost: clean(alias(row, "Cost")),
+          bin: clean(alias(row, "Bin"))
+        };
+        if (!rec.lotSerial) return;
+        inventory.set(normKey(rec.lotSerial), rec);
+      });
+    }
+
+    // ====== TRANSACTION BUILDER ======
+    function addMove() {
+      const destBin = clean(document.getElementById("destBin").value);
+      const imei = clean(document.getElementById("imei").value);
+      if (!imei) { toast("Enter an IMEI/Lot first.", "err"); return; }
+      if (!destBin) { toast("Enter a destination Bin.", "err"); return; }
+      addMoveFor(imei, destBin);
+      document.getElementById("imei").value = "";
+      document.getElementById("imei").focus();
+    }
+
+    function addMoveFor(imei, overrideDest) {
+      const destBin = overrideDest ?? clean(document.getElementById("destBin").value);
+      if (!destBin) { toast("Enter a destination Bin.", "err"); return; }
+      const key = normKey(imei);
+      const rec = inventory.get(key);
+      if (!rec) { toast(`IMEI '${imei}' not found in inventory.`, "err"); return; }
+
+      const base = {
+        item: rec.item || "",
+        lotSerial: rec.lotSerial || imei,
+        exp: rec.exp || "",
+        cost: numOrBlank(rec.cost),
+      };
+
+      const fromRow = { ...base, qty: -1, bin: rec.bin || "UNKNOWN" };
+      const toRow   = { ...base, qty:  1, bin: destBin };
+
+      moves.push({ pairId: crypto.randomUUID(), rows: [fromRow, toRow] });
+      render();
+      toast(`Added move for ${imei}: ${fromRow.bin} → ${destBin}`, "ok");
+      document.getElementById("btnDownload").disabled = false;
+    }
+
+    function removePair(pairId) {
+      moves = moves.filter(p => p.pairId !== pairId);
+      render();
+      if (!moves.length) document.getElementById("btnDownload").disabled = true;
+    }
+
+    function clearAll() {
+      moves = [];
+      render();
+      document.getElementById("btnDownload").disabled = true;
+      toast("Cleared.", "ok");
+    }
+
+    function render() {
+      const tbody = document.querySelector("#tbl tbody");
+      tbody.innerHTML = "";
+      for (const pair of moves) {
+        for (const row of pair.rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${esc(row.item)}</td>
+            <td>${esc(row.lotSerial)}</td>
+            <td>${esc(row.exp)}</td>
+            <td class="right">${row.qty}</td>
+            <td class="right">${row.cost !== "" ? row.cost : ""}</td>
+            <td>${esc(row.bin)}</td>
+            <td><button class="danger" onclick="removePair('${pair.pairId}')">Remove</button></td>
+          `;
+          tbody.appendChild(tr);
+        }
+      }
+    }
+
+    // ====== EXPORT (OrderTime-style CSV) ======
+    function downloadCSV() {
+      const rows = [];
+      for (const pair of moves) {
+        const [fromRow, toRow] = pair.rows;
+        rows.push({ line: 1, ...fromRow });
+        rows.push({ line: 2, ...toRow });
+      }
+
+      const headers = ["No.","Tran Type","Line No","Item","Lot/Serial","Expiration Date","Qty","Cost","Bin"];
+      const toCsv = (arr) => {
+        const lines = [];
+        lines.push(headers.join(","));
+        for (const r of arr) {
+          const vals = [
+            "",                         // No.
+            "1",                        // Tran Type
+            String(r.line || ""),       // Line No
+            csvSafe(r.item),
+            csvSafe(r.lotSerial),
+            csvSafe(r.exp),
+            String(r.qty),
+            r.cost === "" ? "" : String(r.cost),
+            csvSafe(r.bin)
+          ];
+          lines.push(vals.join(","));
+        }
+        return lines.join("\r\n");
+      };
+
+      const csv = toCsv(rows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `lot-serial-moves-${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    // ====== WIRE UP ======
+    document.getElementById("btnLoad").addEventListener("click", loadInventoryFromUrl);
+    document.getElementById("btnDemo").addEventListener("click", loadDemo);
+    document.getElementById("btnAdd").addEventListener("click", addMove);
+    document.getElementById("btnClear").addEventListener("click", clearAll);
+    document.getElementById("btnDownload").addEventListener("click", downloadCSV);
+    document.getElementById("imei").addEventListener("keydown", (e) => { if (e.key === "Enter") addMove(); });
+  </script>
+</body>
+</html>
