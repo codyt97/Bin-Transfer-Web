@@ -1,7 +1,5 @@
-// api/ordertime/report.js
-import { parse } from "csv-parse/sync";
-
-export const config = { runtime: "nodejs" };
+// api/ordertime/report.js  (CommonJS)
+const { parse } = require("csv-parse/sync");
 
 function toNumber(x) {
   if (x === undefined || x === null || x === "") return 0;
@@ -9,7 +7,7 @@ function toNumber(x) {
   return Number.isFinite(n) ? n : 0;
 }
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
     const url = process.env.OT_REPORT_URL;
     if (!url) return res.status(500).json({ error: "OT_REPORT_URL is not set" });
@@ -33,13 +31,10 @@ export default async function handler(req, res) {
     }
 
     const raw = await r.text();
-
-    // If your report is JSON, skip CSV parsing and just return the JSON payload.
     const rowsRaw = url.toLowerCase().includes("output=csv") || raw.includes(",")
       ? parse(raw, { columns: true, skip_empty_lines: true })
       : JSON.parse(raw);
 
-    // Normalize to the fields your page needs
     const normalized = rowsRaw.map((r) => {
       const item = r.Item || r.SKU || r["Item (SKU)"] || r["Item Name"] || r.Product || "";
       const serial = r["Lot/Serial"] || r.LotSerial || r.Serial || r.IMEI || r["Lot / Serial"] || "";
@@ -55,4 +50,4 @@ export default async function handler(req, res) {
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
-}
+};
