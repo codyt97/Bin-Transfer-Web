@@ -201,15 +201,24 @@
       if (!url) { toast("Paste your published CSV URL first.", "err"); return; }
       toast("Loading inventory…");
       try {
-        const res = await fetch(url, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const text = await res.text();
-        adoptInventory(parseCSV(text).rows);
-        document.getElementById("btnAdd").disabled = false;
-        document.getElementById("btnDownload").disabled = moves.length === 0;
-        toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
-      } catch (e) {
-        toast(`Failed to load CSV: ${e.message}`, "err");
+        const res = await fetch("/api/ordertime/report", { cache: "no-store" });
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+const { rows } = await res.json();
+
+// Map API shape to your existing adopter (it expects sheet-like headers).
+const sheetShaped = rows.map(r => ({
+  "Item": r.item,
+  "Lot/Serial": r.serial,
+  "Expiration Date": r.expiration,
+  "Cost": r.cost === 0 ? "0" : String(r.cost ?? ""),
+  "Bin": r.bin
+}));
+
+adoptInventory(sheetShaped);
+document.getElementById("btnAdd").disabled = false;
+document.getElementById("btnDownload").disabled = moves.length === 0;
+toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
+
       }
     }
 
