@@ -7,12 +7,7 @@
   <style>
     :root {
       --bg:#ffffff; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
-      --accent:#16a34a; --accent-weak:#dcfce7; --accent-ring:#86efac;
-      --bad:#ef4444; --ok:#16a34a; --line:#e2e8f0; --chip:#f8fafc;
-    }
-    * { box-sizing: border-box; }
-    html,body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--ink); }
-    .wrap { max-width: 1040px; margin: 32px auto; padding: 0 16px; }
+      --accent:#16a34a; --accent-weak:#dcfce7; --accent-ring:#86efac;async function loadInventoryFromUrl()
     .card { background: var(--card); border:1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px rgba(15, 23, 42, .04); padding: 20px; }
     h1 { font-size: 22px; margin: 0 0 6px; display:flex; gap:10px; align-items:center; }
     .pill { display:inline-flex; gap:6px; align-items:center; padding:4px 10px; border-radius:999px; font-size:12px; background:var(--accent-weak); color:#065f46; border:1px solid var(--accent-ring); }
@@ -195,32 +190,42 @@
     };
 
     // ====== INVENTORY LOADERS ======
-    async function loadInventoryFromUrl() {
-      const urlInput = document.getElementById("csvUrl");
-      const url = clean(urlInput.value);
-      if (!url) { toast("Paste your published CSV URL first.", "err"); return; }
-      toast("Loading inventory…");
-      try {
-        const res = await fetch("/api/ordertime/report", { cache: "no-store" });
-if (!res.ok) throw new Error(`HTTP ${res.status}`);
-const { rows } = await res.json();
+   async function loadInventoryFromUrl() {
+  toast("Loading inventory…");
+  try {
+    // If you paste a CSV URL, we’ll use it; otherwise we use the server API.
+    const url = (document.getElementById("csvUrl").value || "").trim();
 
-// Map API shape to your existing adopter (it expects sheet-like headers).
-const sheetShaped = rows.map(r => ({
-  "Item": r.item,
-  "Lot/Serial": r.serial,
-  "Expiration Date": r.expiration,
-  "Cost": r.cost === 0 ? "0" : String(r.cost ?? ""),
-  "Bin": r.bin
-}));
-
-adoptInventory(sheetShaped);
-document.getElementById("btnAdd").disabled = false;
-document.getElementById("btnDownload").disabled = moves.length === 0;
-toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
-
+    let rows;
+    if (url) {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) throw new Error(`CSV fetch failed: HTTP ${res.status}`);
+      const text = await res.text();
+      rows = parseCSV(text).rows; // existing helper
+    } else {
+      const res = await fetch("/api/ordertime/report", { cache: "no-store" });
+      if (!res.ok) {
+        const body = await res.text().catch(()=> "");
+        throw new Error(`API failed: HTTP ${res.status} — ${body.slice(0,200)}`);
       }
+      const data = await res.json();
+      rows = (data.rows || []).map(r => ({
+        "Item": r.item,
+        "Lot/Serial": r.serial,
+        "Expiration Date": r.expiration,
+        "Cost": r.cost === 0 ? "0" : String(r.cost ?? ""),
+        "Bin": r.bin
+      }));
     }
+
+    adoptInventory(rows);
+    document.getElementById("btnAdd").disabled = false;
+    document.getElementById("btnDownload").disabled = (moves.length === 0);
+    toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
+  } catch (err) {
+    toast(`Load failed: ${String(err.message || err)}`, "err");
+  }
+}
 
     function loadDemo() {
       // Demo rows (feel free to edit/expand)
