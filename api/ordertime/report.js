@@ -34,46 +34,25 @@ export default async function handler(req, res) {
 
     const raw = await r.text();
 
-    // Parse CSV → objects
-    const rows = parse(raw, { columns: true, skip_empty_lines: true });
+    // If your report is JSON, skip CSV parsing and just return the JSON payload.
+    const rowsRaw = url.toLowerCase().includes("output=csv") || raw.includes(",")
+      ? parse(raw, { columns: true, skip_empty_lines: true })
+      : JSON.parse(raw);
 
-    // Normalize to the fields your site needs
-    const normalized = rows.map((r) => {
-      // Accept common header names and aliases from OrderTime reports
-      const item =
-        r.Item ||
-        r.SKU ||
-        r["Item (SKU)"] ||
-        r["Item Name"] ||
-        r["Product"] ||
-        "";
-      const serial =
-        r["Lot/Serial"] ||
-        r["LotSerial"] ||
-        r["Serial"] ||
-        r["IMEI"] ||
-        r["Lot / Serial"] ||
-        "";
-      const expiration =
-        r["Expiration Date"] || r["Expiry"] || r["Expire"] || r["Expiration"] || "";
+    // Normalize to the fields your page needs
+    const normalized = rowsRaw.map((r) => {
+      const item = r.Item || r.SKU || r["Item (SKU)"] || r["Item Name"] || r.Product || "";
+      const serial = r["Lot/Serial"] || r.LotSerial || r.Serial || r.IMEI || r["Lot / Serial"] || "";
+      const expiration = r["Expiration Date"] || r.Expiry || r.Expiration || "";
       const qty = toNumber(r.Qty || r.Quantity || r["On Hand"] || r["Qty On Hand"]);
       const cost = toNumber(r.Cost || r["Avg Cost"] || r["Unit Cost"]);
-      const bin = r.Bin || r.Location || r["Bin Location"] || r["Loc"] || "";
-
-      return {
-        item,
-        serial,
-        expiration,
-        qty,
-        cost,
-        bin,
-      };
+      const bin = r.Bin || r.Location || r["Bin Location"] || r.Loc || "";
+      return { item, serial, expiration, qty, cost, bin };
     });
 
-    // Optional: only return the columns you care about (and keep numbers clean)
     res.setHeader("Cache-Control", "s-maxage=30, stale-while-revalidate=300");
-    return res.status(200).json({ rows: normalized });
+    res.status(200).json({ rows: normalized });
   } catch (e) {
-    return res.status(500).json({ error: String(e?.message || e) });
+    res.status(500).json({ error: String(e?.message || e) });
   }
 }
