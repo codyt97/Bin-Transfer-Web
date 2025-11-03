@@ -6,8 +6,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
-      --bg:#ffffff; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
-      --accent:#16a34a; --accent-weak:#dcfce7; --accent-ring:#86efac;async function loadInventoryFromUrl()
+      --bg:#ffffff;
+      --card:#ffffff;
+      --ink:#0f172a;
+      --muted:#64748b;
+      --accent:#16a34a;
+      --accent-weak:#dcfce7;
+      --accent-ring:#86efac;
+      --line:#e5e7eb;
+      --ok:#16a34a;
+      --bad:#dc2626;
+      --chip:#f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font-family: Inter, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
+    .wrap { max-width: 1060px; margin: 24px auto; padding: 0 16px; }
     .card { background: var(--card); border:1px solid var(--line); border-radius: 16px; box-shadow: 0 6px 24px rgba(15, 23, 42, .04); padding: 20px; }
     h1 { font-size: 22px; margin: 0 0 6px; display:flex; gap:10px; align-items:center; }
     .pill { display:inline-flex; gap:6px; align-items:center; padding:4px 10px; border-radius:999px; font-size:12px; background:var(--accent-weak); color:#065f46; border:1px solid var(--accent-ring); }
@@ -100,7 +113,7 @@
     </div>
 
     <div class="hint" style="margin-top:12px;">
-      Expected columns in your inventory CSV (case-insensitive): 
+      Expected columns in your inventory CSV (case-insensitive):
       <code class="small">Item</code>, <code class="small">Lot/Serial</code>, <code class="small">Expiration Date</code>, <code class="small">Cost</code>, <code class="small">Bin</code>.
     </div>
   </div>
@@ -132,7 +145,6 @@
     // Robust CSV parsing (quoted values, commas inside quotes)
     const parseCSV = (text) => {
       const lines = text.split(/\r?\n/);
-      // trim trailing empties
       while (lines.length && !lines[lines.length-1].trim()) lines.pop();
       if (!lines.length) return { headers:[], rows:[] };
       const headers = splitCsvLine(lines[0]);
@@ -190,45 +202,43 @@
     };
 
     // ====== INVENTORY LOADERS ======
-   async function loadInventoryFromUrl() {
-  toast("Loading inventory…");
-  try {
-    // If you paste a CSV URL, we’ll use it; otherwise we use the server API.
-    const url = (document.getElementById("csvUrl").value || "").trim();
+    async function loadInventoryFromUrl() {
+      toast("Loading inventory…");
+      try {
+        const url = (document.getElementById("csvUrl").value || "").trim();
 
-    let rows;
-    if (url) {
-      const res = await fetch(url, { cache: "no-store" });
-      if (!res.ok) throw new Error(`CSV fetch failed: HTTP ${res.status}`);
-      const text = await res.text();
-      rows = parseCSV(text).rows; // existing helper
-    } else {
-      const res = await fetch("/api/ordertime/report", { cache: "no-store" });
-      if (!res.ok) {
-        const body = await res.text().catch(()=> "");
-        throw new Error(`API failed: HTTP ${res.status} — ${body.slice(0,200)}`);
+        let rows;
+        if (url) {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) throw new Error(`CSV fetch failed: HTTP ${res.status}`);
+          const text = await res.text();
+          rows = parseCSV(text).rows;
+        } else {
+          const res = await fetch("/api/ordertime/report", { cache: "no-store" });
+          if (!res.ok) {
+            const body = await res.text().catch(()=> "");
+            throw new Error(`API failed: HTTP ${res.status} — ${body.slice(0,200)}`);
+          }
+          const data = await res.json();
+          rows = (data.rows || []).map(r => ({
+            "Item": r.item,
+            "Lot/Serial": r.serial,
+            "Expiration Date": r.expiration,
+            "Cost": r.cost === 0 ? "0" : String(r.cost ?? ""),
+            "Bin": r.bin
+          }));
+        }
+
+        adoptInventory(rows);
+        document.getElementById("btnAdd").disabled = false;
+        document.getElementById("btnDownload").disabled = (moves.length === 0);
+        toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
+      } catch (err) {
+        toast(`Load failed: ${String(err.message || err)}`, "err");
       }
-      const data = await res.json();
-      rows = (data.rows || []).map(r => ({
-        "Item": r.item,
-        "Lot/Serial": r.serial,
-        "Expiration Date": r.expiration,
-        "Cost": r.cost === 0 ? "0" : String(r.cost ?? ""),
-        "Bin": r.bin
-      }));
     }
 
-    adoptInventory(rows);
-    document.getElementById("btnAdd").disabled = false;
-    document.getElementById("btnDownload").disabled = (moves.length === 0);
-    toast(`Inventory loaded: ${inventory.size} serials.`, "ok");
-  } catch (err) {
-    toast(`Load failed: ${String(err.message || err)}`, "err");
-  }
-}
-
     function loadDemo() {
-      // Demo rows (feel free to edit/expand)
       const demo = [
         { "Item":"SEL-MAT-01", "Lot/Serial":"1234", "Expiration Date":"1/31/2025", "Cost":"12.12", "Bin":"C-04-03" },
         { "Item":"SEL-MAT-01", "Lot/Serial":"2234", "Expiration Date":"1/31/2025", "Cost":"12.12", "Bin":"C-04-03" },
@@ -236,11 +246,9 @@
         { "Item":"CR-0002",    "Lot/Serial":"ZX-777",  "Expiration Date":"12/31/2025", "Cost":"15.00", "Bin":"A-01-02" },
       ];
       adoptInventory(demo);
-      // pre-fill UI
       document.getElementById("destBin").value = "C-05-03";
-      // seed two example moves
-      addMoveFor("1234");   // from C-04-03 -> C-05-03
-      addMoveFor("ABC999"); // from C-05-01 -> C-05-03
+      addMoveFor("1234");
+      addMoveFor("ABC999");
       document.getElementById("btnAdd").disabled = false;
       document.getElementById("btnDownload").disabled = false;
       toast(`Demo loaded: ${inventory.size} serials. Two example moves added.`, "ok");
@@ -331,10 +339,12 @@
     // ====== EXPORT (OrderTime-style CSV) ======
     function downloadCSV() {
       const rows = [];
+      let lineNo = 0; // ensure both rows in a pair share the same "Line No"
       for (const pair of moves) {
         const [fromRow, toRow] = pair.rows;
-        rows.push({ line: 1, ...fromRow });
-        rows.push({ line: 2, ...toRow });
+        lineNo += 1;
+        rows.push({ line: lineNo, ...fromRow });
+        rows.push({ line: lineNo, ...toRow });
       }
 
       const headers = ["No.","Tran Type","Line No","Item","Lot/Serial","Expiration Date","Qty","Cost","Bin"];
