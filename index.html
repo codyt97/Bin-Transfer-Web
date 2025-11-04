@@ -214,7 +214,9 @@
           const text = await res.text();
           rows = parseCSV(text).rows;
         } else {
-          const res = await fetch("/api/ordertime/report", { cache: "no-store" });
+          // You can add query filters like ?qtygt=0&binPrefix=C-05 later if desired
+const res = await fetch("/api/ordertime/live", { cache: "no-store" });
+
           if (!res.ok) {
             const body = await res.text().catch(()=> "");
             throw new Error(`API failed: HTTP ${res.status} — ${body.slice(0,200)}`);
