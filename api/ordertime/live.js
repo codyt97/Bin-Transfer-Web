@@ -2,10 +2,18 @@
 // Direct REST pull from OrderTime (no CSV). Produces:
 // { rows: [{ item, serial, expiration, qty, cost, bin }] }
 
-export const config = { runtime: "edge" }; // works on Vercel Edge; remove if using Node runtime
+export const config = { runtime: "nodejs" };
 
 const OT_BASE_URL = process.env.OT_BASE_URL;
 const OT_API_KEY  = process.env.OT_API_KEY;
+if (!OT_BASE_URL || !OT_API_KEY) {
+  return new Response(JSON.stringify({
+    error: "Missing envs",
+    haveBaseUrl: !!OT_BASE_URL,
+    haveKey: !!OT_API_KEY
+  }), { status: 500, headers: { "Content-Type": "application/json" }});
+}
+
 
 // ---- TUNE THESE TO YOUR ACCOUNT IF NEEDED ----
 // Common entity logical names used by OrderTime’s /list API.
@@ -30,21 +38,35 @@ async function otList(type, opts = {}) {
     Sortation: opts.sort || { PropertyName: "Id", Direction: 1 }
   };
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OT_API_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
+  // We’ll try several common OT auth styles. The server will accept only the right one.
+const tries = [
+  { "Authorization": `Bearer ${OT_API_KEY}`, "Content-Type": "application/json" },
+  { "ApiKey": OT_API_KEY, "Content-Type": "application/json" },
+  { "X-API-KEY": OT_API_KEY, "Content-Type": "application/json" },
+  { "x-api-key": OT_API_KEY, "Content-Type": "application/json" },
+];
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`OT /list ${type} ${res.status}: ${text}`);
-  }
-  return res.json();
+// If you have OT_BASIC_USER/OT_BASIC_PASS set, we’ll also try Basic:
+const u = process.env.OT_BASIC_USER;
+const p = process.env.OT_BASIC_PASS;
+if (u && p) {
+  const b64 = Buffer.from(`${u}:${p}`).toString("base64");
+  tries.push({ "Authorization": `Basic ${b64}`, "Content-Type": "application/json" });
 }
+
+let lastText = "";
+for (const h of tries) {
+  const res = await fetch(url, { method: "POST", headers: h, body: JSON.stringify(body) });
+  if (res.ok) return res.json();
+  lastText = await res.text();
+  // If it’s clearly an auth error, try the next header set
+  if (!/incorrect api key|unauthorized|forbidden|invalid token/i.test(lastText)) {
+    throw new Error(`OT /list ${type} ${res.status}: ${lastText}`);
+  }
+}
+// If we reach here, all header styles failed
+throw new Error(`OT /list ${type} auth failed. Last response: ${lastText}`);
+
 
 async function listAll(type, opts = {}) {
   const out = [];
